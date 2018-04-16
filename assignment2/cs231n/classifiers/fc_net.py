@@ -184,11 +184,17 @@ class FullyConnectedNet(object):
         # Initialize the first layer
         self.params['W1'] = weight_scale * np.random.randn(input_dim, hidden_dims[0])
         self.params['b1'] = np.zeros(hidden_dims[0])
-
+        if self.use_batchnorm:
+            self.params['gamma1'] = np.ones(hidden_dims[0])
+            self.params['beta1'] = np.zeros(hidden_dims[0])
+        
         # initilaize the hidden layers' parameters
         for i in range(2, self.num_layers):
             self.params['W{0}'.format(i)] = weight_scale * np.random.randn(hidden_dims[i-2], hidden_dims[i-1])
             self.params['b{0}'.format(i)] = np.zeros(hidden_dims[i-1])
+            if self.use_batchnorm:
+                self.params['gamma{0}'.format(i)] = np.ones(hidden_dims[i-1])
+                self.params['beta{0}'.format(i)] = np.zeros(hidden_dims[i-1])
 
         #initialize the last layer
         self.params['W{0}'.format(self.num_layers)] = weight_scale * np.random.randn(hidden_dims[self.num_layers - 2], num_classes)
@@ -254,13 +260,21 @@ class FullyConnectedNet(object):
         ############################################################################
         tmp = X
         caches = []
-        for j in range(1, self.num_layers):
-            affine, aff_cache = affine_forward(tmp, self.params['W{0}'.format(j)], self.params['b{0}'.format(j)])
-            tmp, relu_cache = relu_forward(affine)
-            caches.append((aff_cache, relu_cache))
+        if self.use_batchnorm:
+            for j in range(1, self.num_layers):
+                affine, aff_cache = affine_forward(tmp, self.params['W{0}'.format(j)], self.params['b{0}'.format(j)])
+                bn, bn_cache = batchnorm_forward(affine, self.params['gamma{0}'.format(j)], self.params['beta{0}'.format(j)], self.bn_params[j-1])
+                tmp, relu_cache = relu_forward(bn)
+                caches.append((aff_cache, relu_cache, bn_cache))
+
+        else:
+            for j in range(1, self.num_layers):
+                affine, aff_cache = affine_forward(tmp, self.params['W{0}'.format(j)], self.params['b{0}'.format(j)])
+                tmp, relu_cache = relu_forward(affine)
+                caches.append((aff_cache, relu_cache))
 
         scores, scores_cache = affine_forward(tmp, self.params['W{0}'.format(self.num_layers)], self.params['b{0}'.format(self.num_layers)])
-
+ 
 
         pass
         ############################################################################
@@ -292,17 +306,26 @@ class FullyConnectedNet(object):
         reg_loss = 0.5 * self.reg * reg_loss
         loss = data_loss + reg_loss
 
-        # dlast_affine = affine_backward(dscores, scores_cache)
         temp_x, temp_w, temp_b = affine_backward(dscores, scores_cache)
         
         grads['W{0}'.format(self.num_layers)] = temp_w + self.reg * self.params['W{0}'.format(self.num_layers)]
         grads['b{0}'.format(self.num_layers)] = temp_b
 
-        for k in range(self.num_layers-1, 0, -1):
-            drelu = relu_backward(temp_x, caches[k-1][1])
-            temp_x, temp_w, temp_b = affine_backward(drelu, caches[k-1][0])
-            grads['W{0}'.format(k)] = temp_w + self.reg * self.params['W{0}'.format(k)]
-            grads['b{0}'.format(k)] = temp_b
+        if self.use_batchnorm:
+            for k in range(self.num_layers-1, 0, -1):
+                drelu = relu_backward(temp_x, caches[k-1][1])
+                dx, dgamma, dbeta = batchnorm_backward(drelu, caches[k-1][2])
+                temp_x, temp_w, temp_b = affine_backward(dx, caches[k-1][0])
+                grads['W{0}'.format(k)] = temp_w + self.reg * self.params['W{0}'.format(k)]
+                grads['b{0}'.format(k)] = temp_b
+                grads['gamma{0}'.format(k)] = dgamma
+                grads['beta{0}'.format(k)] = dbeta
+        else:
+            for k in range(self.num_layers-1, 0, -1):
+                drelu = relu_backward(temp_x, caches[k-1][1])
+                temp_x, temp_w, temp_b = affine_backward(drelu, caches[k-1][0])
+                grads['W{0}'.format(k)] = temp_w + self.reg * self.params['W{0}'.format(k)]
+                grads['b{0}'.format(k)] = temp_b
 
         pass
         ############################################################################
