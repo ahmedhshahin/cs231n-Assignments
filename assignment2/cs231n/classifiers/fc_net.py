@@ -260,18 +260,30 @@ class FullyConnectedNet(object):
         ############################################################################
         tmp = X
         caches = []
-        if self.use_batchnorm:
-            for j in range(1, self.num_layers):
-                affine, aff_cache = affine_forward(tmp, self.params['W{0}'.format(j)], self.params['b{0}'.format(j)])
-                bn, bn_cache = batchnorm_forward(affine, self.params['gamma{0}'.format(j)], self.params['beta{0}'.format(j)], self.bn_params[j-1])
-                tmp, relu_cache = relu_forward(bn)
-                caches.append((aff_cache, relu_cache, bn_cache))
+        # if self.use_batchnorm:
+        #     for j in range(1, self.num_layers):
+        #         affine, aff_cache = affine_forward(tmp, self.params['W{0}'.format(j)], self.params['b{0}'.format(j)])
+        #         bn, bn_cache = batchnorm_forward(affine, self.params['gamma{0}'.format(j)], self.params['beta{0}'.format(j)], self.bn_params[j-1])
+        #         tmp, relu_cache = relu_forward(bn)
+        #         caches.append((aff_cache, relu_cache, bn_cache))
 
-        else:
-            for j in range(1, self.num_layers):
-                affine, aff_cache = affine_forward(tmp, self.params['W{0}'.format(j)], self.params['b{0}'.format(j)])
-                tmp, relu_cache = relu_forward(affine)
-                caches.append((aff_cache, relu_cache))
+        # else:
+        #     for j in range(1, self.num_layers):
+        #         affine, aff_cache = affine_forward(tmp, self.params['W{0}'.format(j)], self.params['b{0}'.format(j)])
+        #         tmp, relu_cache = relu_forward(affine)
+        #         caches.append((aff_cache, relu_cache))
+
+        bn_cache, drop_cache = [], []
+
+        for j in range(1, self.num_layers):
+            affine, aff_cache = affine_forward(tmp, self.params['W{0}'.format(j)], self.params['b{0}'.format(j)])
+            if self.use_batchnorm:
+                affine, bn_cache = batchnorm_forward(affine, self.params['gamma{0}'.format(j)], self.params['beta{0}'.format(j)], self.bn_params[j-1])
+            tmp, relu_cache = relu_forward(affine)
+            if self.use_dropout:
+                tmp, drop_cache = dropout_forward(tmp, self.dropout_param)
+            caches.append((aff_cache, relu_cache, bn_cache, drop_cache))
+
 
         scores, scores_cache = affine_forward(tmp, self.params['W{0}'.format(self.num_layers)], self.params['b{0}'.format(self.num_layers)])
  
@@ -311,21 +323,33 @@ class FullyConnectedNet(object):
         grads['W{0}'.format(self.num_layers)] = temp_w + self.reg * self.params['W{0}'.format(self.num_layers)]
         grads['b{0}'.format(self.num_layers)] = temp_b
 
-        if self.use_batchnorm:
-            for k in range(self.num_layers-1, 0, -1):
-                drelu = relu_backward(temp_x, caches[k-1][1])
-                dx, dgamma, dbeta = batchnorm_backward(drelu, caches[k-1][2])
-                temp_x, temp_w, temp_b = affine_backward(dx, caches[k-1][0])
-                grads['W{0}'.format(k)] = temp_w + self.reg * self.params['W{0}'.format(k)]
-                grads['b{0}'.format(k)] = temp_b
+        # if self.use_batchnorm:
+        #     for k in range(self.num_layers-1, 0, -1):
+        #         drelu = relu_backward(temp_x, caches[k-1][1])
+        #         dx, dgamma, dbeta = batchnorm_backward(drelu, caches[k-1][2])
+        #         temp_x, temp_w, temp_b = affine_backward(dx, caches[k-1][0])
+        #         grads['W{0}'.format(k)] = temp_w + self.reg * self.params['W{0}'.format(k)]
+        #         grads['b{0}'.format(k)] = temp_b
+        #         grads['gamma{0}'.format(k)] = dgamma
+        #         grads['beta{0}'.format(k)] = dbeta
+        # else:
+        #     for k in range(self.num_layers-1, 0, -1):
+        #         drelu = relu_backward(temp_x, caches[k-1][1])
+        #         temp_x, temp_w, temp_b = affine_backward(drelu, caches[k-1][0])
+        #         grads['W{0}'.format(k)] = temp_w + self.reg * self.params['W{0}'.format(k)]
+        #         grads['b{0}'.format(k)] = temp_b
+
+        for k in range(self.num_layers-1, 0, -1):
+            if self.use_dropout:
+                temp_x = dropout_backward(temp_x, caches[k-1][3])
+            drelu = relu_backward(temp_x, caches[k-1][1])
+            if self.use_batchnorm:
+                drelu, dgamma, dbeta = batchnorm_backward(drelu, caches[k-1][2])
                 grads['gamma{0}'.format(k)] = dgamma
                 grads['beta{0}'.format(k)] = dbeta
-        else:
-            for k in range(self.num_layers-1, 0, -1):
-                drelu = relu_backward(temp_x, caches[k-1][1])
-                temp_x, temp_w, temp_b = affine_backward(drelu, caches[k-1][0])
-                grads['W{0}'.format(k)] = temp_w + self.reg * self.params['W{0}'.format(k)]
-                grads['b{0}'.format(k)] = temp_b
+            temp_x, temp_w, temp_b = affine_backward(drelu, caches[k-1][0])
+            grads['W{0}'.format(k)] = temp_w + self.reg * self.params['W{0}'.format(k)]
+            grads['b{0}'.format(k)] = temp_b
 
         pass
         ############################################################################
